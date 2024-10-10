@@ -1,0 +1,785 @@
+import sys
+import sqlite3
+from datetime import datetime
+import tkinter as tk
+from tkinter import ttk, messagebox
+from tkcalendar import DateEntry
+
+class ControlePontoApp(tk.Tk):
+    def _init_(self):
+        super()._init_()
+        self.title("Sistema de Controle de Ponto")
+        self.geometry("900x600")
+        self.resizable(False, False)
+
+        # Configuração do estilo
+        style = ttk.Style(self)
+        self.configure(bg="#f0f0f0")
+        style.theme_use('clam')
+        style.configure('TButton', font=('Helvetica', 12), padding=5)
+        style.configure('TLabel', font=('Helvetica', 12), background='#f0f0f0')
+        style.configure('TFrame', background='#f0f0f0')
+        style.configure('TEntry', font=('Helvetica', 12))
+        style.configure('TCombobox', font=('Helvetica', 12))
+        style.configure('Treeview', font=('Helvetica', 10))
+        style.configure('Treeview.Heading', font=('Helvetica', 12, 'bold'))
+
+        # Conexão com o banco de dados
+        self.conexao = None
+        self.cursor = None
+        self.nome_banco = "controle_ponto.db"
+        self.conectar()
+        self.criar_tabelas()
+
+        # Container principal
+        self.container = ttk.Frame(self)
+        self.container.pack(fill="both", expand=True)
+
+        # Inicialização das frames
+        self.frames = {}
+        self.init_frames()
+        self.show_frame(MenuPrincipal)
+
+    def conectar(self):
+        try:
+            self.conexao = sqlite3.connect(self.nome_banco)
+            self.cursor = self.conexao.cursor()
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao conectar ao banco de dados: {error}")
+            sys.exit(1)
+
+    def criar_tabelas(self):
+        try:
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Funcionarios (
+                    funcionario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome TEXT NOT NULL,
+                    cargo TEXT NOT NULL,
+                    data_contratacao TEXT NOT NULL
+                )
+            """)
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Registros_de_Ponto (
+                    registro_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    funcionario_id INTEGER,
+                    data TEXT NOT NULL,
+                    hora_entrada TEXT,
+                    hora_saida TEXT,
+                    FOREIGN KEY (funcionario_id) REFERENCES Funcionarios(funcionario_id)
+                )
+            """)
+            self.conexao.commit()
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao criar tabelas: {error}")
+            sys.exit(1)
+
+    def init_frames(self):
+        for F in (MenuPrincipal, MenuRelatorios, RelatorioHorasTrabalhadas, RelatorioRegistrosPonto,
+                  MenuInserirRegistros, InserirFuncionario, InserirRegistroPonto,
+                  MenuRemoverRegistros, RemoverFuncionario, RemoverRegistroPonto,
+                  MenuAtualizarRegistros, AtualizarFuncionario, AtualizarRegistroPonto,
+                  ListaFuncionarios):
+            frame = F(parent=self.container, controller=self)
+            self.frames[F] = frame
+            frame.grid(row=0, column=0, sticky="nsew")
+
+    def show_frame(self, cont):
+        frame = self.frames[cont]
+        frame.tkraise()
+        if hasattr(frame, 'on_show_frame'):
+            frame.on_show_frame()
+
+class MenuPrincipal(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        # Título
+        titulo = ttk.Label(self, text="Sistema de Controle de Ponto Desenvolvido por:Rafael Caires, Júlia Negri, Maria isabel", font=("Helvetica", 24, "bold"))
+        titulo.pack(pady=30)
+
+        # Botões
+        btn_relatorios = ttk.Button(self, text="Relatórios", width=30,
+                                    command=lambda: controller.show_frame(MenuRelatorios))
+        btn_relatorios.pack(pady=10)
+
+        btn_inserir = ttk.Button(self, text="Inserir Registros", width=30,
+                                 command=lambda: controller.show_frame(MenuInserirRegistros))
+        btn_inserir.pack(pady=10)
+
+        btn_remover = ttk.Button(self, text="Remover Registros", width=30,
+                                 command=lambda: controller.show_frame(MenuRemoverRegistros))
+        btn_remover.pack(pady=10)
+
+        btn_atualizar = ttk.Button(self, text="Atualizar Registros", width=30,
+                                   command=lambda: controller.show_frame(MenuAtualizarRegistros))
+        btn_atualizar.pack(pady=10)
+
+        btn_listar = ttk.Button(self, text="Lista de Funcionários", width=30,
+                                command=lambda: controller.show_frame(ListaFuncionarios))
+        btn_listar.pack(pady=10)
+
+        btn_sair = ttk.Button(self, text="Sair", width=30, command=controller.quit)
+        btn_sair.pack(pady=10)
+
+class MenuRelatorios(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Relatórios", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=30)
+
+        btn_horas_trabalhadas = ttk.Button(self, text="Relatório de Horas Trabalhadas", width=30,
+                                           command=lambda: controller.show_frame(RelatorioHorasTrabalhadas))
+        btn_horas_trabalhadas.pack(pady=10)
+
+        btn_registros_ponto = ttk.Button(self, text="Relatório de Registros de Ponto", width=30,
+                                         command=lambda: controller.show_frame(RelatorioRegistrosPonto))
+        btn_registros_ponto.pack(pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", width=30, command=lambda: controller.show_frame(MenuPrincipal))
+        btn_voltar.pack(pady=10)
+
+class RelatorioHorasTrabalhadas(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Relatório de Horas Trabalhadas", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        columns = ("funcionario", "total_registros", "horas_trabalhadas")
+        self.tabela = ttk.Treeview(self, columns=columns, show="headings")
+        self.tabela.heading("funcionario", text="Funcionário")
+        self.tabela.heading("total_registros", text="Total de Registros")
+        self.tabela.heading("horas_trabalhadas", text="Horas Trabalhadas")
+        self.tabela.pack(fill="both", expand=True, pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", command=lambda: controller.show_frame(MenuRelatorios))
+        btn_voltar.pack(pady=10)
+
+    def on_show_frame(self):
+        for item in self.tabela.get_children():
+            self.tabela.delete(item)
+        try:
+            self.controller.cursor.execute("""
+                SELECT f.nome, COUNT(r.registro_id) as total_registros,
+                       SUM((strftime('%s', r.hora_saida) - strftime('%s', r.hora_entrada)) / 3600.0) as horas_trabalhadas
+                FROM Funcionarios f
+                LEFT JOIN Registros_de_Ponto r ON f.funcionario_id = r.funcionario_id
+                GROUP BY f.funcionario_id
+            """)
+            resultados = self.controller.cursor.fetchall()
+
+            for linha in resultados:
+                horas_trabalhadas = f"{linha[2]:.2f}" if linha[2] else "0.00"
+                self.tabela.insert("", tk.END, values=(linha[0], str(linha[1]), horas_trabalhadas))
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao gerar relatório: {error}")
+
+class RelatorioRegistrosPonto(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Relatório de Registros de Ponto", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        columns = ("funcionario", "data", "hora_entrada", "hora_saida")
+        self.tabela = ttk.Treeview(self, columns=columns, show="headings")
+        self.tabela.heading("funcionario", text="Funcionário")
+        self.tabela.heading("data", text="Data")
+        self.tabela.heading("hora_entrada", text="Hora de Entrada")
+        self.tabela.heading("hora_saida", text="Hora de Saída")
+        self.tabela.pack(fill="both", expand=True, pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", command=lambda: controller.show_frame(MenuRelatorios))
+        btn_voltar.pack(pady=10)
+
+    def on_show_frame(self):
+        for item in self.tabela.get_children():
+            self.tabela.delete(item)
+        try:
+            self.controller.cursor.execute("""
+                SELECT f.nome, r.data, r.hora_entrada, r.hora_saida
+                FROM Funcionarios f
+                JOIN Registros_de_Ponto r ON f.funcionario_id = r.funcionario_id
+                ORDER BY f.nome, r.data
+            """)
+            resultados = self.controller.cursor.fetchall()
+
+            for linha in resultados:
+                self.tabela.insert("", tk.END, values=(linha[0], linha[1], linha[2], linha[3]))
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao gerar relatório: {error}")
+
+class MenuInserirRegistros(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Inserir Registros", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=30)
+
+        btn_inserir_funcionario = ttk.Button(self, text="Inserir Funcionário", width=30,
+                                             command=lambda: controller.show_frame(InserirFuncionario))
+        btn_inserir_funcionario.pack(pady=10)
+
+        btn_inserir_ponto = ttk.Button(self, text="Inserir Registro de Ponto", width=30,
+                                       command=lambda: controller.show_frame(InserirRegistroPonto))
+        btn_inserir_ponto.pack(pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", width=30, command=lambda: controller.show_frame(MenuPrincipal))
+        btn_voltar.pack(pady=10)
+
+class InserirFuncionario(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Inserir Novo Funcionário", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        form_frame = ttk.Frame(self)
+        form_frame.pack(pady=10)
+
+        nome_label = ttk.Label(form_frame, text="Nome:")
+        nome_label.grid(row=0, column=0, sticky="e")
+        self.nome_input = ttk.Entry(form_frame, width=30)
+        self.nome_input.grid(row=0, column=1, pady=5)
+
+        cargo_label = ttk.Label(form_frame, text="Cargo:")
+        cargo_label.grid(row=1, column=0, sticky="e")
+        self.cargo_input = ttk.Entry(form_frame, width=30)
+        self.cargo_input.grid(row=1, column=1, pady=5)
+
+        data_label = ttk.Label(form_frame, text="Data de Contratação:")
+        data_label.grid(row=2, column=0, sticky="e")
+        self.data_input = DateEntry(form_frame, date_pattern='yyyy-MM-dd', width=28)
+        self.data_input.grid(row=2, column=1, pady=5)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        btn_salvar = ttk.Button(btn_frame, text="Salvar", command=self.salvar_funcionario)
+        btn_salvar.pack(side="left", padx=10)
+
+        btn_voltar = ttk.Button(btn_frame, text="Voltar", command=lambda: controller.show_frame(MenuInserirRegistros))
+        btn_voltar.pack(side="left", padx=10)
+
+    def salvar_funcionario(self):
+        nome = self.nome_input.get().strip()
+        cargo = self.cargo_input.get().strip()
+        data_contratacao = self.data_input.get_date().strftime("%Y-%m-%d")
+
+        if not nome or not cargo:
+            messagebox.showwarning("Aviso", "Por favor, preencha todos os campos.")
+            return
+
+        try:
+            self.controller.cursor.execute("""
+                INSERT INTO Funcionarios (nome, cargo, data_contratacao)
+                VALUES (?, ?, ?)
+            """, (nome, cargo, data_contratacao))
+            self.controller.conexao.commit()
+            messagebox.showinfo("Sucesso", "Funcionário inserido com sucesso!")
+            self.controller.show_frame(MenuInserirRegistros)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao inserir funcionário: {error}")
+
+class InserirRegistroPonto(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Inserir Registro de Ponto", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        form_frame = ttk.Frame(self)
+        form_frame.pack(pady=10)
+
+        funcionario_label = ttk.Label(form_frame, text="Funcionário:")
+        funcionario_label.grid(row=0, column=0, sticky="e")
+        self.funcionario_input = ttk.Combobox(form_frame, width=28, state="readonly")
+        self.funcionario_input.grid(row=0, column=1, pady=5)
+
+        data_label = ttk.Label(form_frame, text="Data:")
+        data_label.grid(row=1, column=0, sticky="e")
+        self.data_input = DateEntry(form_frame, date_pattern='yyyy-MM-dd', width=28)
+        self.data_input.grid(row=1, column=1, pady=5)
+
+        entrada_label = ttk.Label(form_frame, text="Hora de Entrada (HH:MM):")
+        entrada_label.grid(row=2, column=0, sticky="e")
+        self.entrada_input = ttk.Entry(form_frame, width=30)
+        self.entrada_input.grid(row=2, column=1, pady=5)
+
+        saida_label = ttk.Label(form_frame, text="Hora de Saída (HH:MM):")
+        saida_label.grid(row=3, column=0, sticky="e")
+        self.saida_input = ttk.Entry(form_frame, width=30)
+        self.saida_input.grid(row=3, column=1, pady=5)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        btn_salvar = ttk.Button(btn_frame, text="Salvar", command=self.salvar_registro_ponto)
+        btn_salvar.pack(side="left", padx=10)
+
+        btn_voltar = ttk.Button(btn_frame, text="Voltar", command=lambda: controller.show_frame(MenuInserirRegistros))
+        btn_voltar.pack(side="left", padx=10)
+
+    def on_show_frame(self):
+        self.atualizar_lista_funcionarios()
+
+    def atualizar_lista_funcionarios(self):
+        try:
+            self.controller.cursor.execute("SELECT nome FROM Funcionarios ORDER BY nome")
+            funcionarios = [row[0] for row in self.controller.cursor.fetchall()]
+            self.funcionario_input['values'] = funcionarios
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao buscar funcionários: {error}")
+
+    def salvar_registro_ponto(self):
+        funcionario_nome = self.funcionario_input.get()
+        data = self.data_input.get_date().strftime("%Y-%m-%d")
+        hora_entrada = self.entrada_input.get().strip()
+        hora_saida = self.saida_input.get().strip()
+
+        if not funcionario_nome:
+            messagebox.showwarning("Aviso", "Por favor, selecione o nome do funcionário.")
+            return
+
+        # Validar formato da hora
+        try:
+            datetime.strptime(hora_entrada, "%H:%M")
+            datetime.strptime(hora_saida, "%H:%M")
+        except ValueError:
+            messagebox.showwarning("Aviso", "Por favor, insira as horas no formato HH:MM.")
+            return
+
+        try:
+            # Buscar o ID do funcionário
+            self.controller.cursor.execute("SELECT funcionario_id FROM Funcionarios WHERE nome = ?", (funcionario_nome,))
+            resultado = self.controller.cursor.fetchone()
+            if not resultado:
+                messagebox.showwarning("Aviso", "Funcionário não encontrado.")
+                return
+            funcionario_id = resultado[0]
+
+            self.controller.cursor.execute("""
+                INSERT INTO Registros_de_Ponto (funcionario_id, data, hora_entrada, hora_saida)
+                VALUES (?, ?, ?, ?)
+            """, (funcionario_id, data, hora_entrada, hora_saida))
+            self.controller.conexao.commit()
+            messagebox.showinfo("Sucesso", "Registro de ponto inserido com sucesso!")
+            self.controller.show_frame(MenuInserirRegistros)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao inserir registro de ponto: {error}")
+
+class MenuRemoverRegistros(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Remover Registros", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=30)
+
+        btn_remover_funcionario = ttk.Button(self, text="Remover Funcionário", width=30,
+                                             command=lambda: controller.show_frame(RemoverFuncionario))
+        btn_remover_funcionario.pack(pady=10)
+
+        btn_remover_ponto = ttk.Button(self, text="Remover Registro de Ponto", width=30,
+                                       command=lambda: controller.show_frame(RemoverRegistroPonto))
+        btn_remover_ponto.pack(pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", width=30, command=lambda: controller.show_frame(MenuPrincipal))
+        btn_voltar.pack(pady=10)
+
+class RemoverFuncionario(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Remover Funcionário", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        form_frame = ttk.Frame(self)
+        form_frame.pack(pady=10)
+
+        funcionario_label = ttk.Label(form_frame, text="Funcionário:")
+        funcionario_label.grid(row=0, column=0, sticky="e")
+        self.funcionario_input = ttk.Combobox(form_frame, width=28, state="readonly")
+        self.funcionario_input.grid(row=0, column=1, pady=5)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        btn_remover = ttk.Button(btn_frame, text="Remover", command=self.confirmar_remover_funcionario)
+        btn_remover.pack(side="left", padx=10)
+
+        btn_voltar = ttk.Button(btn_frame, text="Voltar", command=lambda: controller.show_frame(MenuRemoverRegistros))
+        btn_voltar.pack(side="left", padx=10)
+
+    def on_show_frame(self):
+        self.atualizar_lista_funcionarios()
+
+    def atualizar_lista_funcionarios(self):
+        try:
+            self.controller.cursor.execute("SELECT nome FROM Funcionarios ORDER BY nome")
+            funcionarios = [row[0] for row in self.controller.cursor.fetchall()]
+            self.funcionario_input['values'] = funcionarios
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao buscar funcionários: {error}")
+
+    def confirmar_remover_funcionario(self):
+        nome_funcionario = self.funcionario_input.get()
+        if not nome_funcionario:
+            messagebox.showwarning("Aviso", "Por favor, selecione o funcionário.")
+            return
+
+        try:
+            self.controller.cursor.execute("SELECT funcionario_id FROM Funcionarios WHERE nome = ?", (nome_funcionario,))
+            resultado = self.controller.cursor.fetchone()
+            if not resultado:
+                messagebox.showwarning("Aviso", "Funcionário não encontrado.")
+                return
+
+            funcionario_id = resultado[0]
+
+            # Verificar se existem registros de ponto para este funcionário
+            self.controller.cursor.execute("SELECT COUNT(*) FROM Registros_de_Ponto WHERE funcionario_id = ?", (funcionario_id,))
+            count = self.controller.cursor.fetchone()[0]
+
+            if count > 0:
+                resposta = messagebox.askyesno("Confirmação",
+                                               f"Existem {count} registros de ponto para este funcionário. Deseja removê-los também?")
+                if resposta:
+                    self.controller.cursor.execute("DELETE FROM Registros_de_Ponto WHERE funcionario_id = ?", (funcionario_id,))
+                else:
+                    messagebox.showwarning("Aviso", "Não é possível remover o funcionário sem remover seus registros de ponto.")
+                    return
+
+            self.controller.cursor.execute("DELETE FROM Funcionarios WHERE funcionario_id = ?", (funcionario_id,))
+            self.controller.conexao.commit()
+            messagebox.showinfo("Sucesso", "Funcionário removido com sucesso!")
+            self.controller.show_frame(MenuRemoverRegistros)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao remover funcionário: {error}")
+
+class RemoverRegistroPonto(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Remover Registro de Ponto", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        form_frame = ttk.Frame(self)
+        form_frame.pack(pady=10)
+
+        funcionario_label = ttk.Label(form_frame, text="Funcionário:")
+        funcionario_label.grid(row=0, column=0, sticky="e")
+        self.funcionario_input = ttk.Combobox(form_frame, width=28, state="readonly")
+        self.funcionario_input.grid(row=0, column=1, pady=5)
+
+        data_label = ttk.Label(form_frame, text="Data:")
+        data_label.grid(row=1, column=0, sticky="e")
+        self.data_input = DateEntry(form_frame, date_pattern='yyyy-MM-dd', width=28)
+        self.data_input.grid(row=1, column=1, pady=5)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        btn_remover = ttk.Button(btn_frame, text="Remover", command=self.confirmar_remover_registro_ponto)
+        btn_remover.pack(side="left", padx=10)
+
+        btn_voltar = ttk.Button(btn_frame, text="Voltar", command=lambda: controller.show_frame(MenuRemoverRegistros))
+        btn_voltar.pack(side="left", padx=10)
+
+    def on_show_frame(self):
+        self.atualizar_lista_funcionarios()
+
+    def atualizar_lista_funcionarios(self):
+        try:
+            self.controller.cursor.execute("SELECT nome FROM Funcionarios ORDER BY nome")
+            funcionarios = [row[0] for row in self.controller.cursor.fetchall()]
+            self.funcionario_input['values'] = funcionarios
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao buscar funcionários: {error}")
+
+    def confirmar_remover_registro_ponto(self):
+        nome_funcionario = self.funcionario_input.get()
+        data = self.data_input.get_date().strftime("%Y-%m-%d")
+
+        if not nome_funcionario:
+            messagebox.showwarning("Aviso", "Por favor, selecione o funcionário.")
+            return
+
+        try:
+            self.controller.cursor.execute("""
+                SELECT r.registro_id
+                FROM Registros_de_Ponto r
+                JOIN Funcionarios f ON r.funcionario_id = f.funcionario_id
+                WHERE f.nome = ? AND r.data = ?
+            """, (nome_funcionario, data))
+            resultado = self.controller.cursor.fetchone()
+
+            if not resultado:
+                messagebox.showwarning("Aviso", "Registro de ponto não encontrado.")
+                return
+
+            registro_id = resultado[0]
+
+            resposta = messagebox.askyesno("Confirmação", "Tem certeza que deseja remover este registro de ponto?")
+            if resposta:
+                self.controller.cursor.execute("DELETE FROM Registros_de_Ponto WHERE registro_id = ?", (registro_id,))
+                self.controller.conexao.commit()
+                messagebox.showinfo("Sucesso", "Registro de ponto removido com sucesso!")
+                self.controller.show_frame(MenuRemoverRegistros)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao remover registro de ponto: {error}")
+
+class MenuAtualizarRegistros(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Atualizar Registros", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=30)
+
+        btn_atualizar_funcionario = ttk.Button(self, text="Atualizar Funcionário", width=30,
+                                               command=lambda: controller.show_frame(AtualizarFuncionario))
+        btn_atualizar_funcionario.pack(pady=10)
+
+        btn_atualizar_ponto = ttk.Button(self, text="Atualizar Registro de Ponto", width=30,
+                                         command=lambda: controller.show_frame(AtualizarRegistroPonto))
+        btn_atualizar_ponto.pack(pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", width=30, command=lambda: controller.show_frame(MenuPrincipal))
+        btn_voltar.pack(pady=10)
+
+class AtualizarFuncionario(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Atualizar Funcionário", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        form_frame = ttk.Frame(self)
+        form_frame.pack(pady=10)
+
+        funcionario_label = ttk.Label(form_frame, text="Funcionário:")
+        funcionario_label.grid(row=0, column=0, sticky="e")
+        self.funcionario_input = ttk.Combobox(form_frame, width=28, state="readonly")
+        self.funcionario_input.grid(row=0, column=1, pady=5)
+
+        nome_novo_label = ttk.Label(form_frame, text="Novo Nome:")
+        nome_novo_label.grid(row=1, column=0, sticky="e")
+        self.nome_novo_input = ttk.Entry(form_frame, width=30)
+        self.nome_novo_input.grid(row=1, column=1, pady=5)
+
+        cargo_label = ttk.Label(form_frame, text="Novo Cargo:")
+        cargo_label.grid(row=2, column=0, sticky="e")
+        self.cargo_input = ttk.Entry(form_frame, width=30)
+        self.cargo_input.grid(row=2, column=1, pady=5)
+
+        data_label = ttk.Label(form_frame, text="Nova Data de Contratação:")
+        data_label.grid(row=3, column=0, sticky="e")
+        self.data_input = DateEntry(form_frame, date_pattern='yyyy-MM-dd', width=28)
+        self.data_input.grid(row=3, column=1, pady=5)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        btn_atualizar = ttk.Button(btn_frame, text="Atualizar", command=self.confirmar_atualizar_funcionario)
+        btn_atualizar.pack(side="left", padx=10)
+
+        btn_voltar = ttk.Button(btn_frame, text="Voltar", command=lambda: controller.show_frame(MenuAtualizarRegistros))
+        btn_voltar.pack(side="left", padx=10)
+
+    def on_show_frame(self):
+        self.atualizar_lista_funcionarios()
+
+    def atualizar_lista_funcionarios(self):
+        try:
+            self.controller.cursor.execute("SELECT nome FROM Funcionarios ORDER BY nome")
+            funcionarios = [row[0] for row in self.controller.cursor.fetchall()]
+            self.funcionario_input['values'] = funcionarios
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao buscar funcionários: {error}")
+
+    def confirmar_atualizar_funcionario(self):
+        nome_antigo = self.funcionario_input.get()
+        nome_novo = self.nome_novo_input.get().strip()
+        cargo_novo = self.cargo_input.get().strip()
+        data_nova = self.data_input.get_date().strftime("%Y-%m-%d")
+
+        if not nome_antigo:
+            messagebox.showwarning("Aviso", "Por favor, selecione o funcionário.")
+            return
+
+        try:
+            self.controller.cursor.execute("SELECT * FROM Funcionarios WHERE nome = ?", (nome_antigo,))
+            funcionario = self.controller.cursor.fetchone()
+            if not funcionario:
+                messagebox.showwarning("Aviso", "Funcionário não encontrado.")
+                return
+
+            nome_atualizado = nome_novo if nome_novo else funcionario[1]
+            cargo_atualizado = cargo_novo if cargo_novo else funcionario[2]
+            data_atualizada = data_nova if data_nova else funcionario[3]
+
+            self.controller.cursor.execute("""
+                UPDATE Funcionarios
+                SET nome = ?, cargo = ?, data_contratacao = ?
+                WHERE funcionario_id = ?
+            """, (nome_atualizado, cargo_atualizado, data_atualizada, funcionario[0]))
+            self.controller.conexao.commit()
+            messagebox.showinfo("Sucesso", "Funcionário atualizado com sucesso!")
+            self.controller.show_frame(MenuAtualizarRegistros)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao atualizar funcionário: {error}")
+
+class AtualizarRegistroPonto(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Atualizar Registro de Ponto", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        form_frame = ttk.Frame(self)
+        form_frame.pack(pady=10)
+
+        funcionario_label = ttk.Label(form_frame, text="Funcionário:")
+        funcionario_label.grid(row=0, column=0, sticky="e")
+        self.funcionario_input = ttk.Combobox(form_frame, width=28, state="readonly")
+        self.funcionario_input.grid(row=0, column=1, pady=5)
+
+        data_antiga_label = ttk.Label(form_frame, text="Data do Registro:")
+        data_antiga_label.grid(row=1, column=0, sticky="e")
+        self.data_antiga_input = DateEntry(form_frame, date_pattern='yyyy-MM-dd', width=28)
+        self.data_antiga_input.grid(row=1, column=1, pady=5)
+
+        data_nova_label = ttk.Label(form_frame, text="Nova Data:")
+        data_nova_label.grid(row=2, column=0, sticky="e")
+        self.data_nova_input = DateEntry(form_frame, date_pattern='yyyy-MM-dd', width=28)
+        self.data_nova_input.grid(row=2, column=1, pady=5)
+
+        entrada_label = ttk.Label(form_frame, text="Nova Hora de Entrada (HH:MM):")
+        entrada_label.grid(row=3, column=0, sticky="e")
+        self.entrada_input = ttk.Entry(form_frame, width=30)
+        self.entrada_input.grid(row=3, column=1, pady=5)
+
+        saida_label = ttk.Label(form_frame, text="Nova Hora de Saída (HH:MM):")
+        saida_label.grid(row=4, column=0, sticky="e")
+        self.saida_input = ttk.Entry(form_frame, width=30)
+        self.saida_input.grid(row=4, column=1, pady=5)
+
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=20)
+
+        btn_atualizar = ttk.Button(btn_frame, text="Atualizar", command=self.confirmar_atualizar_registro_ponto)
+        btn_atualizar.pack(side="left", padx=10)
+
+        btn_voltar = ttk.Button(btn_frame, text="Voltar", command=lambda: controller.show_frame(MenuAtualizarRegistros))
+        btn_voltar.pack(side="left", padx=10)
+
+    def on_show_frame(self):
+        self.atualizar_lista_funcionarios()
+
+    def atualizar_lista_funcionarios(self):
+        try:
+            self.controller.cursor.execute("SELECT nome FROM Funcionarios ORDER BY nome")
+            funcionarios = [row[0] for row in self.controller.cursor.fetchall()]
+            self.funcionario_input['values'] = funcionarios
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao buscar funcionários: {error}")
+
+    def confirmar_atualizar_registro_ponto(self):
+        nome_funcionario = self.funcionario_input.get()
+        data_antiga = self.data_antiga_input.get_date().strftime("%Y-%m-%d")
+        data_nova = self.data_nova_input.get_date().strftime("%Y-%m-%d")
+        hora_entrada = self.entrada_input.get().strip()
+        hora_saida = self.saida_input.get().strip()
+
+        if not nome_funcionario:
+            messagebox.showwarning("Aviso", "Por favor, selecione o funcionário.")
+            return
+
+        try:
+            self.controller.cursor.execute("""
+                SELECT r.registro_id, r.data, r.hora_entrada, r.hora_saida
+                FROM Registros_de_Ponto r
+                JOIN Funcionarios f ON r.funcionario_id = f.funcionario_id
+                WHERE f.nome = ? AND r.data = ?
+            """, (nome_funcionario, data_antiga))
+            registro = self.controller.cursor.fetchone()
+
+            if not registro:
+                messagebox.showwarning("Aviso", "Registro de ponto não encontrado.")
+                return
+
+            registro_id = registro[0]
+
+            data_atualizada = data_nova if data_nova else registro[1]
+            hora_entrada_atualizada = hora_entrada if hora_entrada else registro[2]
+            hora_saida_atualizada = hora_saida if hora_saida else registro[3]
+
+            # Validar formato da hora
+            try:
+                datetime.strptime(hora_entrada_atualizada, "%H:%M")
+                datetime.strptime(hora_saida_atualizada, "%H:%M")
+            except ValueError:
+                messagebox.showwarning("Aviso", "Por favor, insira as horas no formato HH:MM.")
+                return
+
+            self.controller.cursor.execute("""
+                UPDATE Registros_de_Ponto
+                SET data = ?, hora_entrada = ?, hora_saida = ?
+                WHERE registro_id = ?
+            """, (data_atualizada, hora_entrada_atualizada, hora_saida_atualizada, registro_id))
+            self.controller.conexao.commit()
+            messagebox.showinfo("Sucesso", "Registro de ponto atualizado com sucesso!")
+            self.controller.show_frame(MenuAtualizarRegistros)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao atualizar registro de ponto: {error}")
+
+class ListaFuncionarios(ttk.Frame):
+    def _init_(self, parent, controller):
+        super()._init_(parent)
+        self.controller = controller
+
+        titulo = ttk.Label(self, text="Lista de Funcionários", font=("Helvetica", 20, "bold"))
+        titulo.pack(pady=20)
+
+        columns = ("funcionario_id", "nome", "cargo", "data_contratacao")
+        self.tabela = ttk.Treeview(self, columns=columns, show="headings")
+        self.tabela.heading("funcionario_id", text="ID")
+        self.tabela.heading("nome", text="Nome")
+        self.tabela.heading("cargo", text="Cargo")
+        self.tabela.heading("data_contratacao", text="Data de Contratação")
+        self.tabela.pack(fill="both", expand=True, pady=10)
+
+        btn_voltar = ttk.Button(self, text="Voltar", command=lambda: controller.show_frame(MenuPrincipal))
+        btn_voltar.pack(pady=10)
+
+    def on_show_frame(self):
+        for item in self.tabela.get_children():
+            self.tabela.delete(item)
+        try:
+            self.controller.cursor.execute("""
+                SELECT funcionario_id, nome, cargo, data_contratacao
+                FROM Funcionarios ORDER BY nome
+            """)
+            resultados = self.controller.cursor.fetchall()
+
+            for linha in resultados:
+                self.tabela.insert("", tk.END, values=linha)
+        except sqlite3.Error as error:
+            messagebox.showerror("Erro", f"Erro ao listar funcionários: {error}")
+
+if _name_ == "_main_":
+    app = ControlePontoApp()
+    app.mainloop()
