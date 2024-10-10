@@ -1,0 +1,37 @@
+-- Criação da tabela Funcionarios
+CREATE TABLE IF NOT EXISTS Funcionarios (
+    funcionario_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    cargo TEXT NOT NULL,
+    data_contratacao TEXT NOT NULL
+);
+
+-- Criação da tabela Registros_de_Ponto
+CREATE TABLE IF NOT EXISTS Registros_de_Ponto (
+    registro_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    funcionario_id INTEGER,
+    data TEXT NOT NULL,
+    hora_entrada TEXT,
+    hora_saida TEXT,
+    FOREIGN KEY (funcionario_id) REFERENCES Funcionarios(funcionario_id)
+);
+
+-- Índices para melhorar a performance das consultas
+CREATE INDEX IF NOT EXISTS idx_funcionario_nome ON Funcionarios(nome);
+CREATE INDEX IF NOT EXISTS idx_registro_funcionario ON Registros_de_Ponto(funcionario_id);
+CREATE INDEX IF NOT EXISTS idx_registro_data ON Registros_de_Ponto(data);
+
+-- Inserção de dados de exemplo para Funcionarios
+INSERT INTO Funcionarios (nome, cargo, data_contratacao) VALUES
+('João Silva', 'Analista', '2023-01-15'),
+('Maria Santos', 'Gerente', '2022-05-20'),
+('Pedro Oliveira', 'Desenvolvedor', '2023-03-10');
+
+-- Inserção de dados de exemplo para Registros_de_Ponto
+INSERT INTO Registros_de_Ponto (funcionario_id, data, hora_entrada, hora_saida) VALUES
+(1, '2023-09-01', '08:00', '17:00'),
+(2, '2023-09-01', '09:00', '18:00'),
+(3, '2023-09-01', '08:30', '17:30'),
+(1, '2023-09-02', '08:15', '17:15'),
+(2, '2023-09-02', '09:00', '18:00'),
+(3, '2023-09-02', '08:45', '17:45');
