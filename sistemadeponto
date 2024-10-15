@@ -1,45 +1,62 @@
-import sqlite3
+import pg8000
 import os
 from datetime import datetime
 
 class SistemaControlePonto:
     def __init__(self):
+        # Configurações de conexão
+        self.nome_banco = "ponto-db"
+        self.usuario = "postgres"
+        self.senha = "root"
+        self.host = "localhost"
+        self.porta = 5435  
         self.conexao = None
         self.cursor = None
-        self.nome_banco = "controle_ponto.db"
 
     def conectar(self):
         try:
-            self.conexao = sqlite3.connect(self.nome_banco)
+            self.conexao = pg8000.connect(
+                database=self.nome_banco,
+                user=self.usuario,
+                password=self.senha,
+                host=self.host,
+                port=self.porta
+            )
             self.cursor = self.conexao.cursor()
             print("Conexão estabelecida com sucesso!")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao conectar ao banco de dados: {error}")
+            raise
 
-    def criar_tabelas(self):
+    def __enter__(self):
         try:
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS Funcionarios (
-                    funcionario_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nome TEXT NOT NULL,
-                    cargo TEXT NOT NULL,
-                    data_contratacao TEXT NOT NULL
-                )
-            """)
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS Registros_de_Ponto (
-                    registro_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    funcionario_id INTEGER,
-                    data TEXT NOT NULL,
-                    hora_entrada TEXT,
-                    hora_saida TEXT,
-                    FOREIGN KEY (funcionario_id) REFERENCES Funcionarios(funcionario_id)
-                )
-            """)
-            self.conexao.commit()
-            print("Tabelas criadas com sucesso!")
-        except sqlite3.Error as error:
-            print(f"Erro ao criar tabelas: {error}")
+            self.conectar()
+            print("Conexão no __enter__ estabelecida com sucesso!")
+            return self
+        except Exception as error:
+            print(f"Erro ao tentar entrar no contexto: {error}")
+            raise
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.conexao:
+            if exc_type is None:
+                self.conexao.commit()
+            else:
+                self.conexao.rollback()
+                print(f"Ocorreu um erro: {exc_val}")
+            self.cursor.close()
+            self.conexao.close()
+            print("Conexão fechada.")
+
+    # def criar_tabelas(self):
+    #     try:
+    #         with open("create_tables.sql", "r") as file:
+    #             self.cursor.execute(file.read())
+    #         self.conexao.commit()
+    #         print("Tabelas criadas com sucesso!")
+    #     except pg8000.DatabaseError as error:
+    #         print(f"Erro ao criar tabelas: {error}")
+    #         raise
 
     def limpar_tela(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -48,19 +65,21 @@ class SistemaControlePonto:
         self.limpar_tela()
         print("=" * 40)
         print("Sistema de Controle de Ponto")
-        print("Desenvolvido por: [Rafael Caires Mergulhão, Júlia Negri, Maria Isabel ]")
+        print("Desenvolvido por: [Seu Grupo]")
         print("Disciplina: Banco de Dados")
         print("Professor: Howard Roatti")
         print("=" * 40)
-        
+
         # Contagem de registros
-        self.cursor.execute("SELECT COUNT(*) FROM Funcionarios")
-        count_funcionarios = self.cursor.fetchone()[0]
-        self.cursor.execute("SELECT COUNT(*) FROM Registros_de_Ponto")
-        count_registros = self.cursor.fetchone()[0]
-        
-        print(f"Total de Funcionários: {count_funcionarios}")
-        print(f"Total de Registros de Ponto: {count_registros}")
+        try:
+            self.cursor.execute("SELECT COUNT(*) FROM Funcionarios")
+            count_funcionarios = self.cursor.fetchone()[0]
+            self.cursor.execute("SELECT COUNT(*) FROM Registros_de_Ponto")
+            count_registros = self.cursor.fetchone()[0]
+            print(f"Total de Funcionários: {count_funcionarios}")
+            print(f"Total de Registros de Ponto: {count_registros}")
+        except pg8000.DatabaseError as error:
+            print(f"Erro ao consultar contagem de registros: {error}")
         print("=" * 40)
         input("Pressione Enter para continuar...")
 
@@ -110,19 +129,20 @@ class SistemaControlePonto:
     def relatorio_horas_trabalhadas(self):
         try:
             self.cursor.execute("""
-                SELECT f.nome, COUNT(r.registro_id) as total_registros,
-                       SUM((julianday(r.hora_saida) - julianday(r.hora_entrada)) * 24) as horas_trabalhadas
+                SELECT f.nome, COUNT(r.registro_id) AS total_registros,
+                       SUM(EXTRACT(EPOCH FROM (r.hora_saida - r.hora_entrada))/3600) AS horas_trabalhadas
                 FROM Funcionarios f
                 LEFT JOIN Registros_de_Ponto r ON f.funcionario_id = r.funcionario_id
-                GROUP BY f.funcionario_id
+                GROUP BY f.nome
             """)
             resultados = self.cursor.fetchall()
             self.limpar_tela()
             print("=== Relatório de Horas Trabalhadas por Funcionário ===")
             for linha in resultados:
-                print(f"Funcionário: {linha[0]}, Total de Registros: {linha[1]}, Horas Trabalhadas: {linha[2]:.2f}")
+                horas_trabalhadas = linha[2] if linha[2] is not None else 0.0
+                print(f"Funcionário: {linha[0]}, Total de Registros: {linha[1]}, Horas Trabalhadas: {horas_trabalhadas:.2f}")
             input("\nPressione Enter para continuar...")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao gerar relatório: {error}")
 
     def relatorio_registros_ponto(self):
@@ -139,7 +159,7 @@ class SistemaControlePonto:
             for linha in resultados:
                 print(f"Funcionário: {linha[0]}, Data: {linha[1]}, Entrada: {linha[2]}, Saída: {linha[3]}")
             input("\nPressione Enter para continuar...")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao gerar relatório: {error}")
 
     def menu_inserir_registros(self):
@@ -166,35 +186,34 @@ class SistemaControlePonto:
         nome = input("Nome do funcionário: ")
         cargo = input("Cargo: ")
         data_contratacao = input("Data de contratação (AAAA-MM-DD): ")
-        
+
         try:
             self.cursor.execute("""
                 INSERT INTO Funcionarios (nome, cargo, data_contratacao)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
             """, (nome, cargo, data_contratacao))
             self.conexao.commit()
             print("Funcionário inserido com sucesso!")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao inserir funcionário: {error}")
         input("\nPressione Enter para continuar...")
 
     def inserir_registro_ponto(self):
         self.limpar_tela()
         print("=== Inserir Registro de Ponto ===")
-        self.listar_funcionarios()
         funcionario_id = input("ID do funcionário: ")
         data = input("Data (AAAA-MM-DD): ")
         hora_entrada = input("Hora de entrada (HH:MM): ")
         hora_saida = input("Hora de saída (HH:MM): ")
-        
+
         try:
             self.cursor.execute("""
                 INSERT INTO Registros_de_Ponto (funcionario_id, data, hora_entrada, hora_saida)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
             """, (funcionario_id, data, hora_entrada, hora_saida))
             self.conexao.commit()
             print("Registro de ponto inserido com sucesso!")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao inserir registro de ponto: {error}")
         input("\nPressione Enter para continuar...")
 
@@ -219,41 +238,30 @@ class SistemaControlePonto:
     def remover_funcionario(self):
         self.limpar_tela()
         print("=== Remover Funcionário ===")
-        self.listar_funcionarios()
         funcionario_id = input("ID do funcionário a ser removido: ")
-        
         try:
-            # Verificar se existem registros de ponto para este funcionário
-            self.cursor.execute("SELECT COUNT(*) FROM Registros_de_Ponto WHERE funcionario_id = ?", (funcionario_id,))
-            count = self.cursor.fetchone()[0]
-            
-            if count > 0:
-                opcao = input(f"Existem {count} registros de ponto para este funcionário. Deseja removê-los também? (S/N): ")
-                if opcao.upper() == 'S':
-                    self.cursor.execute("DELETE FROM Registros_de_Ponto WHERE funcionario_id = ?", (funcionario_id,))
-                else:
-                    print("Não é possível remover o funcionário sem remover seus registros de ponto.")
-                    input("\nPressione Enter para continuar...")
-                    return
-            
-            self.cursor.execute("DELETE FROM Funcionarios WHERE funcionario_id = ?", (funcionario_id,))
+            self.cursor.execute("DELETE FROM Funcionarios WHERE funcionario_id = %s", (funcionario_id,))
+            if self.cursor.rowcount > 0:
+                print("Funcionário removido com sucesso!")
+            else:
+                print("Funcionário não encontrado.")
             self.conexao.commit()
-            print("Funcionário removido com sucesso!")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao remover funcionário: {error}")
         input("\nPressione Enter para continuar...")
 
     def remover_registro_ponto(self):
         self.limpar_tela()
         print("=== Remover Registro de Ponto ===")
-        self.listar_registros_ponto()
         registro_id = input("ID do registro de ponto a ser removido: ")
-        
         try:
-            self.cursor.execute("DELETE FROM Registros_de_Ponto WHERE registro_id = ?", (registro_id,))
+            self.cursor.execute("DELETE FROM Registros_de_Ponto WHERE registro_id = %s", (registro_id,))
+            if self.cursor.rowcount > 0:
+                print("Registro de ponto removido com sucesso!")
+            else:
+                print("Registro de ponto não encontrado.")
             self.conexao.commit()
-            print("Registro de ponto removido com sucesso!")
-        except sqlite3.Error as error:
+        except pg8000.DatabaseError as error:
             print(f"Erro ao remover registro de ponto: {error}")
         input("\nPressione Enter para continuar...")
 
@@ -278,91 +286,78 @@ class SistemaControlePonto:
     def atualizar_funcionario(self):
         self.limpar_tela()
         print("=== Atualizar Funcionário ===")
-        self.listar_funcionarios()
         funcionario_id = input("ID do funcionário a ser atualizado: ")
-        
-        try:
-            self.cursor.execute("SELECT * FROM Funcionarios WHERE funcionario_id = ?", (funcionario_id,))
-            funcionario = self.cursor.fetchone()
-            if funcionario:
-                nome = input(f"Novo nome ({funcionario[1]}): ") or funcionario[1]
-                cargo = input(f"Novo cargo ({funcionario[2]}): ") or funcionario[2]
-                data_contratacao = input(f"Nova data de contratação ({funcionario[3]}): ") or funcionario[3]
-                
-                self.cursor.execute("""
-                    UPDATE Funcionarios
-                    SET nome = ?, cargo = ?, data_contratacao = ?
-                    WHERE funcionario_id = ?
-                """, (nome, cargo, data_contratacao, funcionario_id))
+        nome = input("Novo nome (deixe em branco para não alterar): ")
+        cargo = input("Novo cargo (deixe em branco para não alterar): ")
+
+        update_query = "UPDATE Funcionarios SET "
+        update_params = []
+        if nome:
+            update_query += "nome = %s, "
+            update_params.append(nome)
+        if cargo:
+            update_query += "cargo = %s, "
+            update_params.append(cargo)
+
+        if update_params:
+            update_query = update_query.rstrip(", ") + " WHERE funcionario_id = %s"
+            update_params.append(funcionario_id)
+
+            try:
+                self.cursor.execute(update_query, tuple(update_params))
+                if self.cursor.rowcount > 0:
+                    print("Funcionário atualizado com sucesso!")
+                else:
+                    print("Funcionário não encontrado.")
                 self.conexao.commit()
-                print("Funcionário atualizado com sucesso!")
-            else:
-                print("Funcionário não encontrado.")
-        except sqlite3.Error as error:
-            print(f"Erro ao atualizar funcionário: {error}")
+            except pg8000.DatabaseError as error:
+                print(f"Erro ao atualizar funcionário: {error}")
+        else:
+            print("Nenhuma informação fornecida para atualização.")
+
         input("\nPressione Enter para continuar...")
 
     def atualizar_registro_ponto(self):
         self.limpar_tela()
         print("=== Atualizar Registro de Ponto ===")
-        self.listar_registros_ponto()
         registro_id = input("ID do registro de ponto a ser atualizado: ")
-        
-        try:
-            self.cursor.execute("SELECT * FROM Registros_de_Ponto WHERE registro_id = ?", (registro_id,))
-            registro = self.cursor.fetchone()
-            if registro:
-                data = input(f"Nova data ({registro[2]}): ") or registro[2]
-                hora_entrada = input(f"Nova hora de entrada ({registro[3]}): ") or registro[3]
-                hora_saida = input(f"Nova hora de saída ({registro[4]}): ") or registro[4]
-                
-                self.cursor.execute("""
-                    UPDATE Registros_de_Ponto
-                    SET data = ?, hora_entrada = ?, hora_saida = ?
-                    WHERE registro_id = ?
-                """, (data, hora_entrada, hora_saida, registro_id))
+        data = input("Nova data (AAAA-MM-DD) (deixe em branco para não alterar): ")
+        hora_entrada = input("Nova hora de entrada (HH:MM) (deixe em branco para não alterar): ")
+        hora_saida = input("Nova hora de saída (HH:MM) (deixe em branco para não alterar): ")
+
+        update_query = "UPDATE Registros_de_Ponto SET "
+        update_params = []
+        if data:
+            update_query += "data = %s, "
+            update_params.append(data)
+        if hora_entrada:
+            update_query += "hora_entrada = %s, "
+            update_params.append(hora_entrada)
+        if hora_saida:
+            update_query += "hora_saida = %s, "
+            update_params.append(hora_saida)
+
+        if update_params:
+            update_query = update_query.rstrip(", ") + " WHERE registro_id = %s"
+            update_params.append(registro_id)
+
+            try:
+                self.cursor.execute(update_query, tuple(update_params))
+                if self.cursor.rowcount > 0:
+                    print("Registro de ponto atualizado com sucesso!")
+                else:
+                    print("Registro de ponto não encontrado.")
                 self.conexao.commit()
-                print("Registro de ponto atualizado com sucesso!")
-            else:
-                print("Registro de ponto não encontrado.")
-        except sqlite3.Error as error:
-            print(f"Erro ao atualizar registro de ponto: {error}")
+            except pg8000.DatabaseError as error:
+                print(f"Erro ao atualizar registro de ponto: {error}")
+                self.conexao.rollback()
+        else:
+            print("Nenhuma informação fornecida para atualização.")
+
         input("\nPressione Enter para continuar...")
 
-    def listar_funcionarios(self):
-        try:
-            self.cursor.execute("SELECT funcionario_id, nome FROM Funcionarios")
-            funcionarios = self.cursor.fetchall()
-            print("=== Lista de Funcionários ===")
-            for funcionario in funcionarios:
-                print(f"ID: {funcionario[0]}, Nome: {funcionario[1]}")
-            print("============================")
-        except sqlite3.Error as error:
-            print(f"Erro ao listar funcionários: {error}")
-
-    def listar_registros_ponto(self):
-        try:
-            self.cursor.execute("""
-                SELECT r.registro_id, f.nome, r.data, r.hora_entrada, r.hora_saida
-                FROM Registros_de_Ponto r
-                JOIN Funcionarios f ON r.funcionario_id = f.funcionario_id
-                ORDER BY r.data DESC, r.hora_entrada DESC
-            """)
-            registros = self.cursor.fetchall()
-            print("=== Lista de Registros de Ponto ===")
-            for registro in registros:
-                print(f"ID: {registro[0]}, Funcionário: {registro[1]}, Data: {registro[2]}, Entrada: {registro[3]}, Saída: {registro[4]}")
-            print("==================================")
-        except sqlite3.Error as error:
-            print(f"Erro ao listar registros de ponto: {error}")
-
-    def executar(self):
-        self.conectar()
-        self.criar_tabelas()
-        self.exibir_splash_screen()
-        self.exibir_menu_principal()
-        self.conexao.close()
-
 if __name__ == "__main__":
-    sistema = SistemaControlePonto()
-    sistema.executar()
+    with SistemaControlePonto() as sistema:
+        # sistema.criar_tabelas()  # Cria tabelas, se necessário
+        sistema.exibir_splash_screen()
+        sistema.exibir_menu_principal()
