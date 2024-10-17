@@ -65,7 +65,7 @@ class SistemaControlePonto:
         self.limpar_tela()
         print("=" * 40)
         print("Sistema de Controle de Ponto")
-        print("Desenvolvido por: [Seu Grupo]")
+        print("Desenvolvido por: [Rafael Caires, Júlia Negri, Maria Isabel]")
         print("Disciplina: Banco de Dados")
         print("Professor: Howard Roatti")
         print("=" * 40)
