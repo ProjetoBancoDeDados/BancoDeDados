@@ -38,15 +38,17 @@ git clone <URL_DO_REPOSITORIO>
 cd <DIRETORIO_DO_REPOSITORIO>
 
 Instale a biblioteca necessária:
-bash
+
 pip install pg8000
 
 Configure o Banco de Dados:
 Certifique-se de que o PostgreSQL está em execução.
-Crie um banco de dados chamado ponto-db e configure um usuário com as credenciais especificadas no código (usuario: postgres, senha: root).
+Crie um banco de dados chamado postgres e configure um usuário com as credenciais especificadas no código (usuario: labdatabase, senha: labDatabase2022).
+E execute os scripts do arquivo criar-tabelas.sql.
+
 Execute o Código:
-bash
-python nome_do_arquivo.py
+
+python3 interface_usuario.py
 
 Uso
 Após a instalação, você poderá interagir com o sistema através do terminal. As opções disponíveis incluem:
@@ -54,6 +56,7 @@ Inserir novos funcionários e registros de ponto.
 Remover funcionários e registros.
 Atualizar informações existentes.
 Gerar relatórios sobre horas trabalhadas.
+
 Conclusão
 Este sistema é uma solução prática para gerenciar registros de ponto em ambientes corporativos,
-facilitando a administração do tempo dos funcionários e a geração de relatórios necessários para a gestão eficiente do trabalho.
+facilitando a administração do tempo dos funcionários e a geração de relatórios necessários.
