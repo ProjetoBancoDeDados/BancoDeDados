@@ -5,7 +5,7 @@ from datetime import datetime
 class SistemaControlePonto:
     def __init__(self):
         # Configurações de conexão                     
-        self.nome_banco = "ponto-db"
+        self.nome_banco = "postgres"
         self.usuario = "labdatabase"
         self.senha = "labDatabase2022"
         self.host = "localhost"
