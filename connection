@@ -3,7 +3,7 @@ import pg8000
 
 class DatabaseConnection:
     def __init__(self):
-        self.nome_banco = "postgres"
+        self.nome_banco = "labdatabase"
         self.usuario = "labdatabase"
         self.senha = "labDatabase2022"
         self.host = "localhost"
