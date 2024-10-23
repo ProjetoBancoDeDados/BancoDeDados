@@ -4,11 +4,11 @@ import pg8000
 class DatabaseConnection:
     def __init__(self):
         # Configurações de conexão                     
-        self.nome_banco = "postgres"
-        self.usuario = "postgres"
-        self.senha = "root"
-        self.host = "localhost"
-        self.porta = 5435  
+        self.nome_banco = "labdatabase"
+        self.usuario = "labdatabase"
+        self.senha = "labDatabase2022"
+        self.host = "Localhost"
+        self.porta = 5432 
         self.conexao = None
         self.cursor = None
 
